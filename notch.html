@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TuxBuddy Notch</title>
+    <style>
+      /* Dynamic-Island-style 3-state pill (PRD session-3, refined several
+         times live):
+           1. collapsed  — idle, no hover: tiny circular avatar
+           2. row        — hover: grows sideways into a slim bar with 3
+                           tappable tabs (Notif/Musik/Info)
+           3. panel      — a tab tapped: grows further to show that tab's
+                           full content (still capped, never fills the
+                           screen)
+         Every state uses EXPLICIT px width/height (not `auto`) so the
+         CSS transition between them actually animates smoothly — `auto`
+         targets don't interpolate in CSS, which is why the very first
+         hover-expand version snapped instead of transitioning. */
+      #stage-wrap {
+        /* Override the shared (pet-window) vertical centering — the
+           window is sized tall enough for the PANEL state (260px), so
+           centering left the collapsed 56px circle floating with a big
+           empty gap above it. Anchoring to the top makes the pill sit
+           right at the notch position and grow downward as it expands. */
+        align-items: flex-start;
+        padding-top: 4px;
+      }
+      #notch-pill {
+        display: flex;
+        flex-direction: column;
+        background: rgba(8, 8, 11, 0.95);
+        border: 1px solid rgba(250, 204, 21, 0.22);
+        box-shadow: 0 0 14px rgba(250, 204, 21, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        border-radius: 28px;
+        overflow: hidden;
+        width: 56px;
+        height: 56px;
+        transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1), height 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+          border-radius 0.24s ease, box-shadow 0.24s ease;
+      }
+      #notch-pill.row {
+        width: 260px;
+        height: 68px;
+        border-radius: 34px;
+        box-shadow: 0 0 20px rgba(250, 204, 21, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      }
+      #notch-pill.panel {
+        width: 280px;
+        height: 220px;
+        border-radius: 24px;
+        box-shadow: 0 0 24px rgba(250, 204, 21, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      }
+      #notch-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        flex-shrink: 0;
+      }
+      canvas#stage {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      #notch-tabs {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        flex: 1;
+        min-width: 0;
+      }
+      #notch-pill.row #notch-tabs,
+      #notch-pill.panel #notch-tabs {
+        display: flex;
+      }
+      .notch-tab {
+        appearance: none;
+        border: none;
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        color: #c6cad2;
+        background: rgba(255, 255, 255, 0.06);
+        cursor: pointer;
+        flex: 1;
+      }
+      .notch-tab.active {
+        color: #0c0e12;
+        background: #fbbf24;
+      }
+      #notch-panel {
+        display: none;
+        flex-direction: column;
+        gap: 8px;
+        padding: 0 14px 14px;
+        overflow-y: auto;
+        min-height: 0;
+        flex: 1;
+      }
+      #notch-pill.panel #notch-panel {
+        display: flex;
+      }
+      .notch-panel__title {
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #fbbf24;
+        font-weight: 700;
+      }
+      .notch-panel__body {
+        font-size: 12px;
+        color: #d5d8de;
+        line-height: 1.5;
+      }
+      .notch-empty {
+        color: #6b7078;
+        font-size: 11px;
+        font-style: italic;
+      }
+      .notch-track {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-bottom: 4px;
+      }
+      .notch-track__title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #fff;
+      }
+      .notch-track__artist {
+        font-size: 11px;
+        color: #9aa0ab;
+      }
+      .notch-media-controls {
+        display: flex;
+        gap: 8px;
+      }
+      .notch-media-btn {
+        appearance: none;
+        border: none;
+        border-radius: 999px;
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        color: #0c0e12;
+        background: #fbbf24;
+      }
+      .notch-media-btn--ghost {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .notch-player-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-top: 2px;
+      }
+      .notch-player-row {
+        appearance: none;
+        border: none;
+        border-radius: 10px;
+        padding: 6px 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(255, 255, 255, 0.04);
+        color: #c6cad2;
+        cursor: pointer;
+        text-align: left;
+        font-size: 11px;
+      }
+      .notch-player-row.selected {
+        background: rgba(250, 204, 21, 0.14);
+        color: #fff;
+      }
+      .notch-player-row__dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #4b5058;
+        flex-shrink: 0;
+      }
+      .notch-player-row.playing .notch-player-row__dot {
+        background: #22c55e;
+      }
+      .notch-player-row__text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        min-width: 0;
+      }
+      .notch-edit-btn {
+        appearance: none;
+        border: none;
+        border-radius: 999px;
+        padding: 5px 10px;
+        font-size: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+        align-self: flex-start;
+      }
+      .notch-info-textarea {
+        width: 100%;
+        min-height: 90px;
+        resize: none;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 8px;
+        color: #fff;
+        font-size: 12px;
+        font-family: inherit;
+        padding: 8px;
+        box-sizing: border-box;
+      }
+    </style>
+    <script type="module" src="/src/notch.ts" defer></script>
+  </head>
+  <body>
+    <div id="stage-wrap">
+      <div id="notch-pill">
+        <div id="notch-row">
+          <canvas id="stage" width="420" height="420"></canvas>
+          <div id="notch-tabs">
+            <button class="notch-tab" data-tab="notif">Notif</button>
+            <button class="notch-tab" data-tab="music">Musik</button>
+            <button class="notch-tab" data-tab="info">Info</button>
+          </div>
+        </div>
+        <div id="notch-panel"></div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -56,6 +56,30 @@ export function listenForHookEvents(cb: (envelope: HookEnvelope) => void): Promi
   return listen<HookEnvelope>("tuxbuddy://hook-event", (event) => cb(event.payload));
 }
 
+// Mirrors `roaming::RoamMotion` (src-tauri/src/roaming.rs) — emitted to the
+// "main" (pet) window whenever movement starts/stops/reverses.
+export interface RoamMotion {
+  moving: boolean;
+  dir: 1 | -1;
+}
+
+export function listenForRoamMotion(cb: (motion: RoamMotion) => void): Promise<() => void> {
+  return listen<RoamMotion>("tuxbuddy://roam-motion", (event) => cb(event.payload));
+}
+
+// Emitted by `desktop_follow.rs` whenever the user switches virtual
+// desktops and both windows get moved onto the new one — see
+// `renderPet.ts`'s `playEntrance`.
+export function listenForEntrance(cb: () => void): Promise<() => void> {
+  return listen("tuxbuddy://entrance", () => cb());
+}
+
+// Emitted by `doomscroll.rs` when a doomscroll-prone site looks like it's
+// open — see `renderPet.ts`'s `playTap` (placeholder gesture, PRD §4.4).
+export function listenForTap(cb: () => void): Promise<() => void> {
+  return listen("tuxbuddy://tap", () => cb());
+}
+
 export function respondToEvent(id: string, decision: unknown): Promise<void> {
   return invoke("respond_to_event", { id, decision });
 }
@@ -88,4 +112,33 @@ export function pauseRoaming(): Promise<void> {
 
 export function resumeRoaming(): Promise<void> {
   return invoke("resume_roaming");
+}
+
+// PRD §2.2/§4.4 #5: opt-in manual WASD control — see main.ts.
+export function nudgePet(dx: number, dy: number): Promise<void> {
+  return invoke("nudge_pet", { dx, dy });
+}
+
+// Mirrors `media::PlayerInfo` (src-tauri/src/media.rs) — playerctl-backed
+// MPRIS control (PRD session-3: notch music-player tab). Player selection
+// lives in the frontend (see notch.ts) — this just reports every
+// registered player's state, it doesn't pick one for you.
+export interface PlayerInfo {
+  id: string;
+  playing: boolean;
+  title: string;
+  artist: string;
+}
+
+export function mediaList(): Promise<PlayerInfo[]> {
+  return invoke("media_list");
+}
+export function mediaPlayPause(player: string): Promise<void> {
+  return invoke("media_play_pause", { player });
+}
+export function mediaNext(player: string): Promise<void> {
+  return invoke("media_next", { player });
+}
+export function mediaPrevious(player: string): Promise<void> {
+  return invoke("media_previous", { player });
 }

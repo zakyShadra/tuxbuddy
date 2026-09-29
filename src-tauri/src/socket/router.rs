@@ -46,12 +46,13 @@ pub async fn handle_connection(stream: UnixStream, app: AppHandle, state: Arc<Ap
         return;
     }
 
-    // Fly the window itself to center for the duration of the decision —
-    // not just the sprite's fly-in animation (PRD §2.1/§4.4 #2). Resume
-    // roaming afterward regardless of how the wait ends (answered or timed
-    // out) so Tux never stays frozen mid-screen.
+    // Fly the window itself to wherever the user is working for the
+    // duration of the decision — not just the sprite's fly-in animation
+    // (PRD §2.1/§4.4 #2, refined session 3 to target the focused window).
+    // Resume roaming afterward regardless of how the wait ends (answered
+    // or timed out) so Tux never stays frozen mid-screen.
     if let Some(roam) = app.try_state::<RoamHandle>() {
-        roam.fly_to_center();
+        roam.fly_to_user();
     }
 
     let rx = state.register_pending(envelope.id);

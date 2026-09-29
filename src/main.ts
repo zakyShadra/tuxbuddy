@@ -1,36 +1,95 @@
-import { TuxRenderer } from "./tux/renderTux";
-import { STATE, type SessionState } from "./tux/stateConfig";
+import { PetRenderer } from "./tux/renderPet";
 import {
   listenForHookEvents,
-  eventNameToState,
+  listenForRoamMotion,
+  listenForEntrance,
+  listenForTap,
   focusTerminal,
   pauseRoaming,
   resumeRoaming,
+  nudgePet,
 } from "./ipc/tauriBridge";
-import { initDecisionPanel } from "./ui/decisionPanel";
-import { initHooksPanel } from "./ui/hooksPanel";
+import { initPetMenu } from "./ui/petMenu";
+
+// PRD session-3 two-window split: this is the roaming "pet" window —
+// ambient Idle/Walk/Run/Stop/Fly only, no state badges/glow/decision UI
+// (that all moved to the notch window, see notch.ts). This window's
+// on-screen position is driven entirely by the backend (`roaming.rs`)
+// unless manual WASD control is on (see below).
 
 const canvas = document.getElementById("stage") as HTMLCanvasElement;
-const renderer = new TuxRenderer(canvas);
-const decisionPanel = initDecisionPanel();
-const hooksPanel = initHooksPanel({
-  // Roaming loop lives in the backend (see roaming.rs) — pause it while
-  // this menu is open so Tux doesn't wander off out from under it.
-  onOpen: () => void pauseRoaming(),
-  onClose: () => void resumeRoaming(),
+const renderer = new PetRenderer(canvas);
+
+// Roaming is paused whenever ANY of these are true, resumed only when
+// none are — the menu, freeze toggle, and manual control all want the
+// backend loop to leave the window alone, for different reasons.
+let menuOpen = false;
+let frozen = false;
+let manualActive = false;
+let entranceActive = false;
+function syncRoaming() {
+  if (menuOpen || frozen || manualActive) void pauseRoaming();
+  else void resumeRoaming();
+}
+
+const NUDGE_STEP = 12; // physical px per WASD keypress
+function onManualKeydown(e: KeyboardEvent) {
+  const deltas: Record<string, [number, number]> = {
+    w: [0, -NUDGE_STEP],
+    a: [-NUDGE_STEP, 0],
+    s: [0, NUDGE_STEP],
+    d: [NUDGE_STEP, 0],
+    ArrowUp: [0, -NUDGE_STEP],
+    ArrowLeft: [-NUDGE_STEP, 0],
+    ArrowDown: [0, NUDGE_STEP],
+    ArrowRight: [NUDGE_STEP, 0],
+  };
+  const delta = deltas[e.key];
+  if (!delta) return;
+  e.preventDefault();
+  void nudgePet(delta[0], delta[1]);
+  renderer.setMoving(true, delta[0] < 0 ? -1 : 1);
+}
+
+const petMenu = initPetMenu({
+  onOpen: () => {
+    menuOpen = true;
+    syncRoaming();
+  },
+  onClose: () => {
+    menuOpen = false;
+    syncRoaming();
+  },
+  freeze: {
+    isEnabled: () => frozen,
+    toggle: () => {
+      frozen = !frozen;
+      syncRoaming();
+    },
+  },
+  manualControl: {
+    isEnabled: () => manualActive,
+    toggle: () => {
+      manualActive = !manualActive;
+      syncRoaming();
+      if (manualActive) {
+        document.addEventListener("keydown", onManualKeydown);
+      } else {
+        document.removeEventListener("keydown", onManualKeydown);
+        renderer.setMoving(false, 1);
+      }
+    },
+  },
 });
 
 // Click opens the dropdown menu (PRD §2.2: "Klik → menu"). Right-click is
-// kept as an alias since it doesn't conflict with anything. Scope is
-// currently just the install/uninstall-hooks flow (PRD §4.4 #6's full menu
-// — notification history, pause/diemin, "powered by Claude" info — is
-// still undecided and left for later).
+// kept as an alias since it doesn't conflict with anything.
 canvas.addEventListener("click", () => {
-  hooksPanel.toggle();
+  petMenu.toggle();
 });
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
-  hooksPanel.toggle();
+  petMenu.toggle();
 });
 
 function loop(now: number) {
@@ -40,60 +99,47 @@ function loop(now: number) {
 requestAnimationFrame(loop);
 
 canvas.addEventListener("dblclick", () => {
-  // best-effort jump-to-terminal on click; harmless no-op until a real
-  // hook envelope's meta has been seen (see App.currentMeta below)
   if (currentMeta) void focusTerminal(currentMeta);
 });
 
 let currentMeta: Parameters<typeof focusTerminal>[0] | null = null;
 
-// Dev-only manual state switcher (see index.html comment) — lets us see
-// every animation state before real Claude Code hook wiring exists.
-const devStates = document.getElementById("dev-states")!;
-for (const name of Object.keys(STATE) as SessionState[]) {
-  const btn = document.createElement("button");
-  btn.textContent = name;
-  btn.style.setProperty("--accent", STATE[name].color);
-  btn.onclick = () => {
-    renderer.setState(name);
-    document.querySelectorAll(".dev-states button").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-  };
-  devStates.appendChild(btn);
-}
+// roaming.rs emits this whenever movement starts/stops/reverses — see
+// `renderPet.ts`'s setMoving for the walk<->idle<->stop-once handling.
+// Ignored while manual control or an entrance sequence is driving the
+// sprite directly — roaming.rs is paused during both, but still keeps
+// emitting `moving:false` on every tick, which would otherwise stomp the
+// entrance/manual pose back to idle mid-animation.
+listenForRoamMotion(({ moving, dir }) => {
+  if (manualActive || entranceActive) return;
+  renderer.setMoving(moving, dir === -1 ? -1 : 1);
+});
 
-// Dev-only: preview the fly-in -> land -> decision-panel sequence without
-// a real blocking hook event.
-const flyBtn = document.createElement("button");
-flyBtn.textContent = "Test Fly-In";
-flyBtn.onclick = () => {
-  renderer.setState("Approval");
-  renderer.playFlyIn(() =>
-    decisionPanel.show({
-      id: "dev-test",
-      event_name: "PreToolUse",
-      blocking: true,
-      payload: { tool_name: "Bash" },
-      meta: {},
-    }),
-  );
-};
-devStates.appendChild(flyBtn);
+// desktop_follow.rs emits this after moving both windows onto the
+// desktop the user just switched to — see `renderPet.ts`'s playEntrance.
+listenForEntrance(() => {
+  entranceActive = true;
+  renderer.playEntrance(() => {
+    entranceActive = false;
+    void resumeRoaming();
+  });
+});
 
-// Real hook events from the Rust backend (crates/hook-cli -> Unix socket ->
-// socket::router -> this event) take over state once they start arriving.
+// doomscroll.rs emits this when a doomscroll-prone site looks open — see
+// `renderPet.ts`'s playTap (placeholder gesture, real clip TBD).
+listenForTap(() => {
+  renderer.playTap();
+});
+
+// Still listen for hook events here (not just in notch.ts) purely to
+// capture `meta` for double-click terminal-focus, and to trigger the
+// fly-in sprite when a blocking envelope arrives (dormant while
+// `is_blocking()` stays disabled backend-side, see PRD §4.1b #10 — kept
+// wired for whenever that's revisited). The decision UI itself now lives
+// in the notch window, not here.
 listenForHookEvents((envelope) => {
   currentMeta = envelope.meta;
-  const state = eventNameToState(envelope.event_name);
-  if (state) renderer.setState(state);
-
-  // `blocking` (not event_name) decides whether a decision UI is needed —
-  // see decisionPanel.ts for why. PRD §2.1 requires flying in and landing
-  // *before* the UI appears, never both at once — playFlyIn's callback
-  // enforces that ordering.
   if (envelope.blocking) {
-    renderer.playFlyIn(() => decisionPanel.show(envelope));
-  } else {
-    decisionPanel.hide();
+    renderer.playFlyIn(() => {});
   }
 });

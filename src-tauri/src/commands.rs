@@ -3,7 +3,7 @@ use crate::roaming::RoamHandle;
 use crate::session::SessionState;
 use protocol::TerminalMeta;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, Manager, PhysicalPosition, State};
 use uuid::Uuid;
 
 #[tauri::command]
@@ -56,4 +56,36 @@ pub fn pause_roaming(roam: State<'_, RoamHandle>) {
 #[tauri::command]
 pub fn resume_roaming(roam: State<'_, RoamHandle>) {
     roam.resume();
+}
+
+#[tauri::command]
+pub fn media_list() -> Vec<crate::media::PlayerInfo> {
+    crate::media::list()
+}
+
+#[tauri::command]
+pub fn media_play_pause(player: String) {
+    crate::media::play_pause(&player);
+}
+
+#[tauri::command]
+pub fn media_next(player: String) {
+    crate::media::next(&player);
+}
+
+#[tauri::command]
+pub fn media_previous(player: String) {
+    crate::media::previous(&player);
+}
+
+/// Opt-in manual WASD control (PRD §2.2/§4.4 #5) — moves the pet window
+/// directly by a physical-pixel delta. The frontend is responsible for
+/// pausing the roaming loop before sending these (see `main.ts`) so the
+/// two position sources never fight each other.
+#[tauri::command]
+pub fn nudge_pet(app: AppHandle, dx: f64, dy: f64) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("main window not found")?;
+    let pos = window.outer_position().map_err(|e| e.to_string())?;
+    let new_pos = PhysicalPosition::new(pos.x + dx as i32, pos.y + dy as i32);
+    window.set_position(new_pos).map_err(|e| e.to_string())
 }

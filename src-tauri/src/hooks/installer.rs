@@ -90,6 +90,16 @@ fn build_merged(existing: &Value, hook_path: &str) -> Value {
     Value::Object(root)
 }
 
+/// Whether our hook entries are already exactly what `install()` would
+/// write — used to auto-install silently on startup (PRD session-3:
+/// "buat jadi default aja", no more manual Install button) without
+/// spamming a new backup file on every single launch.
+pub fn is_installed() -> bool {
+    let existing = read_settings();
+    let hook_path = hook_binary_path().display().to_string();
+    build_merged(&existing, &hook_path) == existing
+}
+
 /// Returns the pretty-printed merged settings.json for the frontend to
 /// show the user before they confirm (`write` is a separate step).
 pub fn preview() -> Result<String, String> {

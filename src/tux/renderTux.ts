@@ -41,12 +41,37 @@ const FRAME_COUNT: Record<string, number> = {
   approval: 28,
 };
 
-// Takeoff -> glide -> land, extracted from the user's terbang.mp4. Not a
-// SessionState — played once via playFlyIn() as a transition before a
-// blocking envelope's decision panel appears, per PRD §2.1's required
-// order: fly in, stop, *then* show the UI (never both at once).
-const FLYING_DIR = "flying";
-const FLYING_FRAME_COUNT = 60;
+// avatarMode (notch's 56px circle) face-crop calibration, per SessionState
+// — a shared crop calibrated on Idle alone clipped badly on the ~5 states
+// whose source scene is a wide landscape shot (character off to one side
+// next to a prop, e.g. Working's laptop) rather than Idle/Thinking/
+// Approval's portrait-centered framing. Values are (faceFracX, faceFracY):
+// the point in the ORIGINAL frame (as a 0-1 fraction of its width/height)
+// that gets centered in the circle — found by cropping each state's f000
+// at a guessed region, looking at the result, and adjusting (see PRD
+// §4.1f/session-3 for the one-off Python script used). `zoom` is shared
+// since it mainly controls "how tight" the crop is, not position.
+// Lowered twice now from the value verified via rectangular Python crops
+// (2.2 -> 1.5 -> 1.1) — those crops didn't account for the circular CSS
+// mask the notch actually applies (border-radius:50%), which clips the
+// rectangle's corners and made the live result noticeably tighter than
+// the verification images. 1.5 was still too tight for Working
+// specifically — reported live ("laptop nya ngga kebawa"): its crop
+// center is off to one side (faceFracX=0.775) specifically to include
+// the laptop prop, and less zoom is needed to keep both the prop and the
+// face in frame at once.
+const AVATAR_ZOOM = 1.1;
+const AVATAR_FACE_FRAC: Record<SessionState, [number, number]> = {
+  Idle: [0.5, 0.225],
+  Thinking: [0.48, 0.32],
+  Working: [0.775, 0.325],
+  Searching: [0.72, 0.32],
+  Finished: [0.72, 0.28],
+  Error: [0.7, 0.245],
+  Question: [0.43, 0.28],
+  Approval: [0.5, 0.33],
+  RateLimit: [0.5, 0.225], // reuses Idle's sequence, so Idle's crop too
+};
 
 interface LoadedFrame {
   img: HTMLImageElement;
@@ -74,10 +99,15 @@ export class TuxRenderer {
   private lastZzzAt = 0;
   private lastSweatAt = 0;
   private burstDone = false;
-  private flying = false;
-  private flyDone: (() => void) | null = null;
+  private avatarMode: boolean;
 
-  constructor(canvas: HTMLCanvasElement) {
+  /** `avatarMode` — used by the notch's small circular icon (PRD session
+   * 3: reported live as imprecise/cropped-looking): the full-body sprite
+   * squeezed into a 56px circle clipped off the head, since the sprite's
+   * own vertical center is roughly torso-height, not face-height. Zooms
+   * in and re-centers on the face instead of the whole body, and skips
+   * the glow/badge chrome that's meaningless at that size. */
+  constructor(canvas: HTMLCanvasElement, opts: { avatarMode?: boolean } = {}) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("2d context unavailable");
     this.ctx = ctx;
@@ -85,13 +115,13 @@ export class TuxRenderer {
     this.H = canvas.height;
     this.cx = this.W / 2;
     this.cursorX = this.cx;
+    this.avatarMode = opts.avatarMode ?? false;
 
     // Multiple states can point at the same frame directory (RateLimit ->
     // idle), so load each distinct directory's sequence once and share it.
     for (const dir of new Set(Object.values(FRAME_DIR))) {
       this.sequences.set(dir, this.loadSequence(dir, FRAME_COUNT[dir]));
     }
-    this.sequences.set(FLYING_DIR, this.loadSequence(FLYING_DIR, FLYING_FRAME_COUNT));
 
     canvas.addEventListener("mousemove", (e) => {
       const r = canvas.getBoundingClientRect();
@@ -119,16 +149,6 @@ export class TuxRenderer {
       frames.push(entry);
     }
     return frames;
-  }
-
-  /** Plays the takeoff->glide->land clip once, then calls onDone (the
-   * caller shows the decision panel from there) — see FLYING_DIR comment. */
-  playFlyIn(onDone: () => void) {
-    this.flying = true;
-    this.flyDone = onDone;
-    this.frameIndex = 0;
-    this.frameDir = 1;
-    this.frameChangedAt = performance.now();
   }
 
   setState(name: SessionState) {
@@ -220,28 +240,17 @@ export class TuxRenderer {
 
   /** Ping-pongs frameIndex across the sequence at FRAME_MS pace — a hard
    * loop (jump back to frame 0) would pop visibly since these clips were
-   * cropped from mid-gesture video, not authored as seamless loops. While
-   * flying, plays once forward instead and fires flyDone on reaching the
-   * last (landed) frame. */
+   * cropped from mid-gesture video, not authored as seamless loops. */
   private advanceFrame(now: number, frameCount: number) {
     if (frameCount <= 1) return;
     let steps = Math.floor((now - this.frameChangedAt) / FRAME_MS);
     if (steps <= 0) return;
     steps = Math.min(steps, 5);
     for (let i = 0; i < steps; i++) {
-      if (this.flying && this.frameIndex >= frameCount - 1) {
-        this.flying = false;
-        const done = this.flyDone;
-        this.flyDone = null;
-        this.frameIndex = 0;
-        this.frameDir = 1;
-        done?.();
-        break;
-      }
       this.frameIndex += this.frameDir;
       if (this.frameIndex >= frameCount - 1) {
         this.frameIndex = frameCount - 1;
-        if (!this.flying) this.frameDir = -1;
+        this.frameDir = -1;
       } else if (this.frameIndex <= 0) {
         this.frameIndex = 0;
         this.frameDir = 1;
@@ -273,13 +282,15 @@ export class TuxRenderer {
 
     ctx.clearRect(0, 0, this.W, this.H);
 
-    const glow = ctx.createRadialGradient(this.cx, this.cy, 20, this.cx, this.cy, 230);
-    glow.addColorStop(0, this.hexA(cfg.glow, cfg.glowOp));
-    glow.addColorStop(1, this.hexA(cfg.glow, 0));
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, this.W, this.H);
+    if (!this.avatarMode) {
+      const glow = ctx.createRadialGradient(this.cx, this.cy, 20, this.cx, this.cy, 230);
+      glow.addColorStop(0, this.hexA(cfg.glow, cfg.glowOp));
+      glow.addColorStop(1, this.hexA(cfg.glow, 0));
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, this.W, this.H);
+    }
 
-    const dirKey = this.flying ? FLYING_DIR : FRAME_DIR[this.currentState];
+    const dirKey = FRAME_DIR[this.currentState];
     const frames = this.sequences.get(dirKey) ?? [];
     this.advanceFrame(now, frames.length);
     const entry = frames[this.frameIndex] as LoadedFrame | undefined;
@@ -292,9 +303,21 @@ export class TuxRenderer {
     ctx.scale(squishX, squishY);
 
     if (entry?.ready) {
-      ctx.drawImage(entry.img, -spriteW / 2, -SPRITE_H / 2, spriteW, SPRITE_H);
+      if (this.avatarMode) {
+        // A single Idle-calibrated crop clipped badly on the ~5 states
+        // whose source scene is a wide landscape shot (character off to
+        // one side next to a prop) rather than Idle's portrait framing —
+        // reported live ("Working" showed just a sliver of laptop).
+        // AVATAR_FACE_FRAC has a crop calibrated per state instead.
+        const [faceFracX, faceFracY] = AVATAR_FACE_FRAC[this.currentState];
+        const h = SPRITE_H * AVATAR_ZOOM;
+        const w = spriteW * AVATAR_ZOOM;
+        ctx.drawImage(entry.img, -faceFracX * w, -faceFracY * h, w, h);
+      } else {
+        ctx.drawImage(entry.img, -spriteW / 2, -SPRITE_H / 2, spriteW, SPRITE_H);
+      }
     }
-    this.drawBadge(cfg, spriteW * 0.3, -SPRITE_H * 0.42);
+    if (!this.avatarMode) this.drawBadge(cfg, spriteW * 0.3, -SPRITE_H * 0.42);
 
     ctx.restore();
 

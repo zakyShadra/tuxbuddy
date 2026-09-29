@@ -15,6 +15,7 @@
       {
         "label": "main",
         "title": "TuxBuddy",
+        "url": "index.html",
         "width": 240,
         "height": 270,
         "resizable": false,
@@ -23,6 +24,20 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "shadow": false
+      },
+      {
+        "label": "notch",
+        "title": "TuxBuddy Notch",
+        "url": "notch.html",
+        "width": 330,
+        "height": 260,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": false
       }
     ],
     "security": {
