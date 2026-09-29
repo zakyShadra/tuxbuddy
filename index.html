@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TuxBuddy</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <div id="stage-wrap">
+      <canvas id="stage" width="420" height="420"></canvas>
+    </div>
+    <!-- Dev-only manual state switcher — real state will come from Claude
+         Code hook events (see ipc/tauriBridge.ts) once M2 wires that up.
+         Remove once the socket/hook path drives state end-to-end. -->
+    <div class="dev-states" id="dev-states"></div>
+  </body>
+</html>

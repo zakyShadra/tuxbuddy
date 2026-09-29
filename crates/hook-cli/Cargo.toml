@@ -1,0 +1,13 @@
+[package]
+name = "tuxbuddy-hook"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "tuxbuddy-hook"
+path = "src/main.rs"
+
+[dependencies]
+protocol = { path = "../protocol" }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }

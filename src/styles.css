@@ -1,0 +1,197 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+#stage-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+canvas {
+  display: block;
+  cursor: pointer;
+  /* Displayed size is smaller than the 420x420 drawing buffer (see
+     index.html) — the browser downsamples it, which is both a cheap way
+     to shrink the mascot (PRD feedback: window felt too big) and gives
+     crisper edges than drawing at a smaller resolution directly. */
+  width: 220px;
+  height: 220px;
+}
+
+.dev-states {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.dev-states button {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(20,22,28,0.85);
+  color: #c7cbd4;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dev-states button.active {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  border-color: transparent;
+}
+
+.decision-panel[hidden] {
+  display: none;
+}
+
+.decision-panel {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 240px;
+  max-width: 90vw;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(16, 18, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.decision-panel__title {
+  color: #e5e7eb;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  word-break: break-word;
+}
+
+.decision-panel__row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.decision-panel__btn {
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fff;
+}
+
+.decision-panel__btn--allow { background: #22c55e; }
+.decision-panel__btn--always { background: #3b82f6; }
+.decision-panel__btn--deny { background: #f43f5e; }
+
+.decision-panel__input {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e7eb;
+}
+
+.hooks-panel[hidden] {
+  display: none;
+}
+
+.hooks-panel {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: min(360px, 92vw);
+  max-height: 85vh;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(16, 18, 24, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+
+.hooks-panel__title {
+  color: #e5e7eb;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.hooks-panel__title--error {
+  color: #f43f5e;
+}
+
+.hooks-panel__diff {
+  max-height: 40vh;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #a3e635;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre;
+}
+
+.hooks-panel__row {
+  display: flex;
+  gap: 8px;
+}
+
+.hooks-panel__btn {
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  flex: 1;
+}
+
+.hooks-panel__btn--primary { background: #3b82f6; }
+.hooks-panel__btn--danger { background: #f43f5e; }
+.hooks-panel__btn--ghost { background: rgba(255, 255, 255, 0.08); }
